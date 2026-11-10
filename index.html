@@ -372,6 +372,13 @@ const ART = window.ART || null;
 // 公開版（build_public.py が作る・GitHub Pages）：曲の一覧（歌詞つき）は window.PUB。譜面・曲・MV・ジャケットは横のファイルを取りに行き、sw.js が端末に残す
 const PUB = window.PUB || null;
 if (PUB && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+// 用意できた曲を端末に残すよう sw.js に頼む。初めて開いた時は sw.js が動き出す前に受け取るので、これが無いと1曲目が残らない
+// （sw.js はブラウザの控えから写すだけなので、通信はほぼ増えない。もう残っている物は何もしない）
+function pubKeep(s) {
+  if (!PUB || !("serviceWorker" in navigator)) return;
+  const urls = [s.chart, s.cover, s.audio, S.mvs[s.id] ? s.mv : null].filter(Boolean);
+  navigator.serviceWorker.ready.then(r => r.active && r.active.postMessage({keep: urls})).catch(() => {});
+}
 const gasCall = (fn, ...a) => new Promise((ok, ng) => google.script.run.withSuccessHandler(ok).withFailureHandler(ng)[fn](...a));
 
 const $ = s => document.querySelector(s);
@@ -568,7 +575,7 @@ async function prepare() {
       catch (e) { mvNote = `MV を読めませんでした（${e && e.message || e}）。ジャケットで遊べますわ。` }   // MV が無くても遊べるようにする
     }
     if (tok !== S.loadTok) return;
-    $("#loading").textContent = mvNote; $("#startBtn").disabled = false;
+    $("#loading").textContent = mvNote; $("#startBtn").disabled = false; pubKeep(song);
     $("#devInfo").textContent = `端末の申告：音の出力の遅れ ${Math.round(((ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * 1000)}ms・${ctx.sampleRate}Hz`;
   } catch (e) { if (tok === S.loadTok) $("#loading").textContent = "読み込めませんでした：" + (e && e.message || e) }
 }
