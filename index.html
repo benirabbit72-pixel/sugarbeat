@@ -458,6 +458,12 @@ function unlockIOS() {
     keepAlive.play().catch(() => {});
   } catch (e) {}
 }
+// v28：遊んでいない時は無音の音を止めて手放す。流しっぱなしだと iPhone が「再生中」と見て、ダイナミックアイランドに印が残り続けた
+function quietIOS() {
+  if (!keepAlive) return;
+  try { keepAlive.pause(); const u = keepAlive.src; keepAlive.removeAttribute("src"); keepAlive.load(); URL.revokeObjectURL(u) } catch (e) {}
+  keepAlive = null;
+}
 // 「いま耳に届いている音」の AudioContext の時刻。perf＝performance.now() と同じ物差しの時刻（タップの瞬間など）
 // ① getOutputTimestamp（出力の遅れ込みの対応表）を使う ② 使えない・おかしい時は currentTime − 出力の遅れ
 // ③（v3.1・2026-11-09）音の時計は端末によって 10〜20ms の刻みでしか進まず、そのまま使うとノーツがガタガタ進む。
@@ -1397,12 +1403,14 @@ function pause() {
   if (!G.on || G.paused) return; G.paused = true;
   try { ctx.suspend() } catch (e) {}
   try { G.mv && G.mv.v.pause() } catch (e) {}
+  quietIOS();
   $("#pmenu").hidden = false;
 }
 // つづける：画面に 3・2・1 を 0.8秒ずつ出してから再開する（らら の希望 2026-11-09 v14）。その間は止まったまま（音も時計も進まない・タップは数えない）
 const CD = {n: 3, step: 0.8, timer: 0};
 function resume() {
   if (!G.on || !G.paused || G.cd) return;
+  unlockIOS();
   $("#pmenu").hidden = true; G.cd = true; $("#cd").hidden = false;
   let k = CD.n; const num = $("#cdN");
   const tick = () => {
@@ -1427,13 +1435,14 @@ function stopGame() {
   try { G.mv && G.mv.v.pause() } catch (e) {}
   try { G.wake && G.wake.release() } catch (e) {}
   try { if (document.fullscreenElement) document.exitFullscreen() } catch (e) {}
+  quietIOS();
   if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
 }
 $("#pauseBtn").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); pause() });
 $("#resumeBtn").onclick = resume;
 $("#retryBtn").onclick = () => { stopGame(); startGame() };
 $("#quitBtn").onclick = () => { stopGame(); show("title"); showLast() };
-document.addEventListener("visibilitychange", () => { if (document.hidden && G.on) pause() });
+document.addEventListener("visibilitychange", () => { if (document.hidden) { if (G.on) pause(); quietIOS() } });
 
 // ───────────── 結果 ─────────────
 function stats(a) {
@@ -1549,7 +1558,7 @@ async function startCal() {
   tickMsg();
 }
 function endCal() {
-  CAL.on = false; const st = stats(CAL.ds);
+  CAL.on = false; quietIOS(); const st = stats(CAL.ds);
   $("#calMsg").textContent = "おしまい"; $("#calRes").hidden = false;
   if (!st || st.n < 8) { $("#calZure").innerHTML = `<span>数えたタップ</span><b>${st ? st.n : 0} 回（8回以上いりますわ）</b>`; $("#calApply").hidden = true; return }
   $("#calApply").hidden = false; CAL.result = Math.round(st.mean);
