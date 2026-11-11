@@ -804,6 +804,33 @@ async function loadVoice() {
     VOICE.src = v; VOICE.ready = true;
   } catch (e) { VOICE.ready = false; $("#voiceHint").textContent = "掛け声の声を読めませんでした（掛け声なしで始まりますわ）" }
 }
+// v30：結果画面の掛け声とファンファーレ（らら の希望 2026-11-11「ステージクリア！とか、やったねAランクだよ！みたいな掛け声」）
+//   声は voice.json の result（make_result_voice.py・S/A/B/C/D と F＝ライフが尽きた時）。初めて鳴らす時に読む。ファンファーレは素材を使わずここで鳴らす
+const RES = {buf: {}, srcs: []};
+function stopCheer() { for (const x of RES.srcs) { try { x.stop() } catch (e) {} } RES.srcs = [] }
+function fanfare(rank, t) {
+  const tone = (f, at, dur, type, vol) => { const o = ctx.createOscillator(), e = ctx.createGain(); o.type = type; o.frequency.value = f;
+    e.gain.setValueAtTime(0, at); e.gain.linearRampToValueAtTime(vol, at + 0.01); e.gain.exponentialRampToValueAtTime(0.001, at + dur);
+    o.connect(e); e.connect(musBus); o.start(at); o.stop(at + dur + 0.05); RES.srcs.push(o) };
+  if (rank === "F") { [[392, 0], [349.23, 0.2], [293.66, 0.4]].forEach(([f, d]) => tone(f, t + d, 0.4, "triangle", 0.2)); return }   // ソ・ファ・レ（下がる）
+  [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, t + i * 0.09, 0.25, "square", 0.07));   // ド・ミ・ソ・ド（駆け上がる）
+  const big = rank === "S" || rank === "A", len = big ? 1.1 : 0.7;
+  [523.25, 659.25, 783.99].concat(big ? [1046.5] : []).forEach(f => { tone(f, t + 0.4, len, "sawtooth", 0.03); tone(f * 2, t + 0.4, len, "triangle", 0.05) });   // 和音
+  if (big) for (let i = 0; i < 8; i++) tone(1568 + i * 196, t + 0.45 + i * 0.05, 0.18, "sine", 0.045);   // きらきら
+}
+async function playCheer(rank) {
+  stopCheer(); if (!ctx) return;
+  try { if (ctx.state === "suspended") await ctx.resume() } catch (e) {}
+  const t0 = ctx.currentTime + 0.08; fanfare(rank, t0);
+  const v = S.voice && VOICE.src && VOICE.src.result && VOICE.src.result[rank];
+  if (!v) return;
+  try {
+    if (!RES.buf[rank]) RES.buf[rank] = await new Promise((ok, ng) => { const pr = ctx.decodeAudioData(b64ToAB(v.audio), ok, ng); if (pr && pr.then) pr.then(ok, ng) });
+    if ($("#result").hidden) return;   // 読んでいる間に画面を離れた
+    const x = ctx.createBufferSource(), g = ctx.createGain(); x.buffer = RES.buf[rank]; g.gain.value = VOICE.src.gain || 1;
+    x.connect(g); g.connect(musBus); x.start(Math.max(ctx.currentTime + 0.02, t0 + (rank === "F" ? 0.75 : 0.95))); RES.srcs.push(x);
+  } catch (e) {}
+}
 function playVoice(buf, at) {
   const s = ctx.createBufferSource(), g = ctx.createGain(); s.buffer = buf; g.gain.value = VOICE.src.gain || 1;
   s.connect(g); g.connect(musBus); s.start(at); G.voices.push(s);
@@ -921,6 +948,7 @@ addEventListener("resize", () => { if (G.on) layout() });
 
 async function startGame() {
   if (!S.buf) return;
+  stopCheer();
   unlockIOS(); ac(); try { await ctx.resume() } catch (e) {}
   const ch = S.chart.charts[S.level], t0 = segStart(), perm = lanePerm(S.arrange, ch.lanes);
   Object.assign(G, {on: true, paused: false, level: S.level, lanes: ch.lanes, offset: S.offset, speed: S.speed, rev: S.dir === "up", t0, variant: variant(), bg: S.bg, arrange: S.arrange, perm,
@@ -1428,14 +1456,14 @@ async function resumeNow() {
   for (const n of G.act || []) if (!n.tj) n.held = Math.max(n.held, G.lastT + 0.5);   // 長押しの途中で止めた時：押し直すまで 0.5秒待つ
   requestAnimationFrame(frame);
 }
-function stopGame() {
+function stopGame(keepIOS) {
   G.on = false; try { G.src && G.src.stop() } catch (e) {}
   for (const s of G.voices || []) { try { s.stop() } catch (e) {} }
   G.intro = null; $("#intro").hidden = true;
   try { G.mv && G.mv.v.pause() } catch (e) {}
   try { G.wake && G.wake.release() } catch (e) {}
   try { if (document.fullscreenElement) document.exitFullscreen() } catch (e) {}
-  quietIOS();
+  if (!keepIOS) quietIOS();   // 結果画面の掛け声の間は、無音の音を止めない（止めると消音スイッチの iPhone で声が鳴らない）
   if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
 }
 $("#pauseBtn").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); pause() });
@@ -1458,7 +1486,8 @@ async function finish() {
   const p = pct(), sc = score();
   const rank = G.failed ? "F" : sc >= 950000 ? "S" : sc >= 900000 ? "A" : sc >= 800000 ? "B" : sc >= 700000 ? "C" : "D";
   const st = stats(G.taps.map(x => x[1]));
-  stopGame(); show("result");
+  stopGame(true); show("result");
+  playCheer(rank); setTimeout(() => { if (!G.on) quietIOS() }, 6500);   // 掛け声が終わったら無音の音を手放す
   const lv = S.chart.charts[G.level];
   $("#rTitle").textContent = `${S.chart.title}${G.t0 > 0 ? "（TVサイズ）" : ""}［${lv.label} Lv.${lv.level || "?"}］・背景 ${G.bg === "mv" ? "MV" : "ジャケット"}・ずれ合わせ ${sgn(G.offset)}ms・速さ ${G.speed}${G.arrange === "mirror" ? "・ミラー" : G.arrange === "shuffle" ? "・シャッフル" : ""}`;
   // ベストは最後まで遊べた時だけ更新（曲×全曲／TVサイズ×難しさ ごと）
@@ -1531,7 +1560,7 @@ function drawHist(ds) {
 }
 $("#applyBtn").onclick = () => { if (lastSuggest != null) { setOffset(lastSuggest); $("#applyBtn").textContent = `ずれ合わせを ${sgn(S.offset).replace(".0", "")} ms にしましたわ ✔`; $("#applyBtn").disabled = true; setTimeout(() => $("#applyBtn").disabled = false, 800) } };
 $("#againBtn").onclick = () => startGame();
-$("#backBtn").onclick = () => { show("title"); showLast() };
+$("#backBtn").onclick = () => { stopCheer(); show("title"); showLast() };
 $("#startBtn").onclick = () => startGame();
 function showLast() {
   const h = LS.get("hist", []); $("#lastCard").hidden = !h.length; if (!h.length) return;
