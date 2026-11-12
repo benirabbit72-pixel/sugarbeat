@@ -182,6 +182,10 @@ button:disabled{opacity:.45}
 .rank .pc{font-family:"Dela",var(--ui);font-size:30px;font-variant-numeric:tabular-nums;min-width:0}
 .rank{flex-wrap:wrap;align-items:center}
 .rank .pc .smeta{font-family:var(--ui);font-size:13px;font-weight:600;margin-top:4px}
+/* v31：結果のランクの右にジャケット（らら の希望 2026-11-12）。点数は下の段へ */
+.rank .rcover{width:116px;height:116px;margin-left:10px;transform:rotate(3deg)}
+.rank .rcover[hidden]{display:none}
+.rank .pc{flex-basis:100%}
 .counts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;text-align:center}
 .counts div{background:var(--panel2);border-radius:12px;padding:8px 4px;font-size:11px;color:var(--sub)}
 .counts b{display:block;font-family:"Dela",var(--ui);font-size:22px;font-weight:400;font-variant-numeric:tabular-nums}
@@ -305,7 +309,7 @@ button:disabled{opacity:.45}
     <h1 style="font-size:30px">リザルト</h1>
     <div class="smeta" id="rTitle"></div>
     <div class="card">
-      <div class="rank"><span class="r" id="rRank">S</span><span class="pc" id="rPct">0%</span></div>
+      <div class="rank"><span class="r" id="rRank">S</span><img class="cover rcover" id="rCover" alt="" hidden><span class="pc" id="rPct">0%</span></div>
       <div class="counts">
         <div class="cP"><b id="rP">0</b>PERFECT</div><div class="cG"><b id="rG">0</b>GREAT</div><div class="cD"><b id="rD">0</b>GOOD</div>
         <div class="cB"><b id="rB">0</b>BAD</div><div class="cM"><b id="rM">0</b>MISS</div><div class="cC"><b id="rC">0</b>最大コンボ</div>
@@ -1494,6 +1498,7 @@ async function finish() {
   const best = getBest(G.level), isNew = !G.failed && (!best || sc > best.score);
   if (isNew) LS.set(bestKey(G.level), {score: sc, rank, when: new Date().toISOString()});
   $("#rRank").textContent = rank;
+  { const rc = $("#rCover"); if (S.song.cover) { if (rc.getAttribute("src") !== S.song.cover) rc.src = S.song.cover; rc.hidden = false } else rc.hidden = true }
   $("#rPct").innerHTML = `${sc.toLocaleString("ja-JP")}${isNew ? '<span class="newbest">NEW BEST!</span>' : ""}<div class="smeta">達成率 ${p.toFixed(1)}%${G.hold.n ? `・長押し ${G.hold.ok}／${G.hold.n}${G.hold.slides ? `（うちスライド ${G.hold.slides}）` : ""}` : ""}・ライフ ${Math.round(G.life)}（いちばん減った時 ${Math.round(G.lifeMin)}）${best && !isNew ? `・BEST ${best.score.toLocaleString("ja-JP")}` : ""}</div>${G.failed ? '<div class="failed">LIFE 0 ― ライフが尽きましたわ</div>' : ""}`;
   $("#rP").textContent = G.cnt.P; $("#rG").textContent = G.cnt.G; $("#rD").textContent = G.cnt.D; $("#rB").textContent = G.cnt.B; $("#rM").textContent = G.cnt.M; $("#rC").textContent = G.maxCombo;
   const early = G.taps.filter(x => x[1] < 0).length, late = G.taps.filter(x => x[1] > 0).length;
